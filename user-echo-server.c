@@ -101,16 +101,21 @@ static int handle_message_from_client(int client, client_list_t **list)
     int len;
     char buf[BUF_SIZE];
     memset(buf, 0, BUF_SIZE);
+    // 接收資料
     if ((len = recv(client, buf, BUF_SIZE, 0)) < 0)
         server_err("Fail to receive", list);
+    // 沒收到訊息
     if (len == 0) {
+        // 關閉 client
         if (close(client) < 0)
             server_err("Fail to close", list);
+        // 將 client 從 linke list 移除
         *list = delete_client(list, client);
         printf("After fd=%d is closed, current numbers clients = %d\n", client,
                size_list(*list));
     } else {
         printf("Client #%d :> %s", client, buf);
+        // 送出資料
         if (send(client, buf, BUF_SIZE, 0) < 0)
             server_err("Fail to send", list);
     }
@@ -128,6 +133,12 @@ int main(void)
     socklen_t socklen = sizeof(addr);
 
     client_list_t *list = NULL;
+    /**
+     * 建立一個 socket descriptor
+     * PF_INET: 使用 32 bit IP 地址
+     * SOCK_STREAM: Provides sequenced, reliable, two-way, connection-based byte
+     * streams.
+     */
     int listener;
     if ((listener = socket(PF_INET, SOCK_STREAM, 0)) < 0)
         server_err("Fail to create socket", &list);
@@ -135,6 +146,7 @@ int main(void)
 
     if (setnonblock(listener) == -1)
         server_err("Fail to set nonblocking", &list);
+    // 將 addr 和 listener 連繫起來
     if (bind(listener, (struct sockaddr *) &addr, sizeof(addr)) < 0)
         server_err("Fail to bind", &list);
     printf("Listener was binded to %s\n", inet_ntoa(addr.sin_addr));
@@ -156,18 +168,34 @@ int main(void)
     if (listen(listener, 128) < 0)
         server_err("Fail to listen", &list);
 
+    // creates a new epoll instance
     int epoll_fd;
     if ((epoll_fd = epoll_create(EPOLL_SIZE)) < 0)
         server_err("Fail to create epoll", &list);
 
+    // EPOLLIN: The associated file is available for read operations
+    // EPOLLET: Requests edge-triggered notification for the associated file
+    // descriptor
     static struct epoll_event ev = {.events = EPOLLIN | EPOLLET};
     ev.data.fd = listener;
+
+    /*
+     * epoll_ctl: This system call is used to add, modify, or remove entries in
+     * the interest list of the epoll(7) instance referred to by the file
+     * descriptor epfd EPOLL_CTL_ADD: Add an entry to the interest list of the
+     * epoll file descriptor
+     */
     if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, listener, &ev) < 0)
         server_err("Fail to control epoll", &list);
     printf("Listener (fd=%d) was added to epoll.\n", epoll_fd);
 
     while (1) {
         struct sockaddr_in client_addr;
+
+        /**
+         * epoll_wait: mode transition 並開始監聽
+         * EPOLL_RUN_TIMEOUT: block indefinitely
+         */
         int epoll_events_count;
         if ((epoll_events_count = epoll_wait(epoll_fd, events, EPOLL_SIZE,
                                              EPOLL_RUN_TIMEOUT)) < 0)
@@ -186,8 +214,10 @@ int main(void)
                            ntohs(client_addr.sin_port), client);
                     setnonblock(client);
                     ev.data.fd = client;
+                    // epoll_fd 新增新的監聽對象 (client)
                     if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, client, &ev) < 0)
                         server_err("Fail to control epoll", &list);
+                    // 將 client 加到 linked list 裡
                     push_back_client(&list, client,
                                      inet_ntoa(client_addr.sin_addr));
                     printf(
