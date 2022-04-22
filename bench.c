@@ -84,12 +84,14 @@ static void *bench_worker(__attribute__((unused)))
     /* wait until all workers created */
     pthread_mutex_lock(&worker_lock);
     while (!ready)
+        // 等待 worker_wait 被 broadcast 或是 signal
         if (pthread_cond_wait(&worker_wait, &worker_lock)) {
             puts("pthread_cond_wait failed");
             exit(-1);
         }
     pthread_mutex_unlock(&worker_lock);
 
+    // 建立 socket descriptor
     sock_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (sock_fd == -1) {
         perror("socket");
@@ -102,24 +104,29 @@ static void *bench_worker(__attribute__((unused)))
         .sin_port = htons(TARGET_PORT),
     };
 
+    // 建立連線
     if (connect(sock_fd, (struct sockaddr *) &info, sizeof(info)) == -1) {
         perror("connect");
         exit(-1);
     }
 
     gettimeofday(&start, NULL);
+    // 送資料給 server
     send(sock_fd, msg_dum, strlen(msg_dum), 0);
+    // 從 server 接收資料
     recv(sock_fd, dummy, MAX_MSG_LEN, 0);
     gettimeofday(&end, NULL);
 
     shutdown(sock_fd, SHUT_RDWR);
     close(sock_fd);
 
+    // 比較接受回來的資料和原本的資料是否相同
     if (strncmp(msg_dum, dummy, strlen(msg_dum))) {
         puts("echo message validation failed");
         exit(-1);
     }
 
+    // 計算經過時間
     pthread_mutex_lock(&res_lock);
     time_res[idx++] += time_diff_us(&start, &end);
     pthread_mutex_unlock(&res_lock);
@@ -141,7 +148,7 @@ static void bench(void)
 {
     for (int i = 0; i < BENCH_COUNT; i++) {
         ready = false;
-
+        // 建立 client
         create_worker(MAX_THREAD);
 
         pthread_mutex_lock(&worker_lock);
@@ -159,7 +166,7 @@ static void bench(void)
 
         idx = 0;
     }
-
+    // 計算平均時間
     for (int i = 0; i < MAX_THREAD; i++)
         fprintf(bench_fd, "%d %ld\n", i, time_res[i] /= BENCH_COUNT);
 }
