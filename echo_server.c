@@ -101,11 +101,14 @@ static struct work_struct *create_work(struct socket *sk)
 {
     struct kecho *work;
 
+    // 分配 kecho 結構大小的空間
+    // GFP_KERNEL: 正常配置記憶體
     if (!(work = kmalloc(sizeof(struct kecho), GFP_KERNEL)))
         return NULL;
 
     work->sock = sk;
 
+    // 初始化已經建立的 work ，並運行函式 echo_server_worker
     INIT_WORK(&work->kecho_work, echo_server_worker);
 
     list_add(&work->list, &daemon.worker);
@@ -133,15 +136,18 @@ int echo_server_daemon(void *arg)
     struct socket *sock;
     struct work_struct *work;
 
+    // 登記要接收的 Signal
     allow_signal(SIGKILL);
     allow_signal(SIGTERM);
 
     INIT_LIST_HEAD(&daemon.worker);
 
+    // 判斷執行緒是否該被中止
     while (!kthread_should_stop()) {
         /* using blocking I/O */
         int error = kernel_accept(param->listen_sock, &sock, 0);
         if (error < 0) {
+            // 檢查當前執行緒是否有 signal 處理
             if (signal_pending(current))
                 break;
             printk(KERN_ERR MODULE_NAME ": socket accept error = %d\n", error);
