@@ -69,13 +69,16 @@ static void echo_server_worker(struct work_struct *work)
     struct kecho *worker = container_of(work, struct kecho, kecho_work);
     unsigned char *buf;
 
+    // 取得 buffer 空間
     buf = kzalloc(BUF_SIZE, GFP_KERNEL);
     if (!buf) {
         printk(KERN_ERR MODULE_NAME ": kmalloc error....\n");
         return;
     }
 
+    // 當程式還沒有要中斷前，執行無限迴圈
     while (!daemon.is_stopped) {
+        // 取得資料
         int res = get_request(worker->sock, buf, BUF_SIZE - 1);
         if (res <= 0) {
             if (res) {
@@ -83,13 +86,13 @@ static void echo_server_worker(struct work_struct *work)
             }
             break;
         }
-
+        // 回傳資料
         res = send_request(worker->sock, buf, res);
         if (res < 0) {
             printk(KERN_ERR MODULE_NAME ": send request error = %d\n", res);
             break;
         }
-
+        // 重置 buffer
         memset(buf, 0, res);
     }
 
