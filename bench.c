@@ -49,12 +49,11 @@
  */
 #define MAX_THREAD 1000
 
-/*
- * TODO: provide unique message (maybe generate dynamically, or somehow) for
- * each worker could produce benchmarking result which is more conforms to
- * realworld usage.
- */
-static const char *msg_dum = "dummy message";
+#define GENRAND64(X) (((X) &0x7F7F7F7F7F7F7F7F) | 0x2020202020202020)
+#define GENRAND8(X) (((X) &0x7F) | 0x20)
+
+#define DETECT_NULL(X) (((X) -0x0101010101010101) & ~(X) &0x8080808080808080)
+#define DETECT_CHAR(X, MASK) (DETECT_NULL((X) ^ (MASK)))
 
 static pthread_t pt[MAX_THREAD];
 
@@ -69,6 +68,34 @@ static long time_res[MAX_THREAD] = {0};
 static int idx = 0; /* for indexing "time_res" */
 static FILE *bench_fd;
 
+static void GenRandString(char *str)
+{
+    int size = (rand() & (MAX_MSG_LEN - 1)) + 1;
+    uint64_t *lptr = (uint64_t *) str;
+
+    while (size >= 8) {
+        uint64_t rand64 = (uint64_t) rand() << 32 | rand();
+        *lptr = GENRAND64(rand64);
+        // 如果偵測到 DEL
+        if (DETECT_CHAR(*lptr, 0x7F7F7F7F7F7F7F7F))
+            continue;
+        lptr++;
+        size -= 8;
+    }
+
+    char *cptr = (char *) lptr;
+
+    while (size) {
+        *cptr = GENRAND8(rand());
+        // 如果產生 DEL
+        if (*cptr == 0x7F)
+            continue;
+        cptr++;
+        size--;
+    }
+    *cptr = '\0';
+}
+
 static inline long time_diff_us(struct timeval *start, struct timeval *end)
 {
     return ((end->tv_sec - start->tv_sec) * 1000000) +
@@ -78,9 +105,12 @@ static inline long time_diff_us(struct timeval *start, struct timeval *end)
 static void *bench_worker(__attribute__((unused)))
 {
     int sock_fd;
-    char dummy[MAX_MSG_LEN];
+    char msg_dum[MAX_MSG_LEN + 1];
+    char dummy[MAX_MSG_LEN + 1];
     struct timeval start, end;
 
+    // 產生隨機字串
+    GenRandString(msg_dum);
     /* wait until all workers created */
     pthread_mutex_lock(&worker_lock);
     while (!ready)
@@ -173,6 +203,7 @@ static void bench(void)
 
 int main(void)
 {
+    srand(time(NULL));
     bench_fd = fopen(BENCHMARK_RESULT_FILE, "w");
     if (!bench_fd) {
         perror("fopen");
