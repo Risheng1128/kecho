@@ -31,7 +31,9 @@ static int get_request(struct socket *sock, unsigned char *buf, size_t size)
 
     /* get msg */
     length = kernel_recvmsg(sock, &msg, &vec, size, size, msg.msg_flags);
-    TRACE(recvmsg);
+    if (likely(length)) /* Not EOF */
+        TRACE(recvmsg);
+
     return length;
 }
 
